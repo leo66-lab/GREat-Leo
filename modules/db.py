@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime
+import shutil
 import sqlite3
 from pathlib import Path
 
-from .config import BACKUP_DIR, DATA_DIR, DB_PATH, EXPORT_DIR
+from .config import BACKUP_DIR, DATA_DIR, DB_PATH, EXPORT_DIR, SEED_DB_PATH
 
 
 SCHEMA_VERSION = 6
@@ -270,6 +272,47 @@ END;
 def ensure_directories() -> None:
     for path in (DATA_DIR, EXPORT_DIR, BACKUP_DIR):
         path.mkdir(parents=True, exist_ok=True)
+
+
+def database_word_count(db_path: Path | str = DB_PATH) -> int:
+    path = Path(db_path)
+    if not path.exists():
+        return 0
+    try:
+        with sqlite3.connect(str(path)) as conn:
+            has_words = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'words'"
+            ).fetchone()
+            if not has_words:
+                return 0
+            row = conn.execute("SELECT COUNT(*) FROM words").fetchone()
+    except sqlite3.DatabaseError:
+        return 0
+    return int(row[0] or 0)
+
+
+def ensure_seed_database_available() -> bool:
+    ensure_directories()
+    if database_word_count(SEED_DB_PATH) > 0:
+        return False
+    if database_word_count(DB_PATH) <= 0:
+        return False
+    shutil.copy2(DB_PATH, SEED_DB_PATH)
+    return True
+
+
+def restore_seed_database_if_needed() -> bool:
+    if database_word_count(DB_PATH) > 0:
+        return False
+    if database_word_count(SEED_DB_PATH) <= 0:
+        return False
+
+    ensure_directories()
+    if DB_PATH.exists():
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        shutil.copy2(DB_PATH, BACKUP_DIR / f"empty_db_before_seed_restore_{stamp}.db")
+    shutil.copy2(SEED_DB_PATH, DB_PATH)
+    return True
 
 
 def get_connection(db_path: Path | str = DB_PATH) -> sqlite3.Connection:

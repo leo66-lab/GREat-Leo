@@ -79,6 +79,11 @@ def sync_database_change(message: str = "Update GRE vocabulary database") -> Non
         return
     if result.get("status") == "pushed":
         st.caption("已同步到 GitHub，刷新或云端重启后仍会保留。")
+    elif result.get("reason") == "local_database_smaller_than_seed":
+        st.warning(
+            "已保存到当前运行环境，但检测到词库数量少于内置种子词库，"
+            "为避免空库或残缺库覆盖 GitHub，本次没有同步到 GitHub。"
+        )
 
 
 @st.cache_data(ttl=20, show_spinner=False)
@@ -154,7 +159,9 @@ def cached_review_plan_words(plan_id: int, day_number: int) -> list[dict]:
 def setup() -> None:
     if not st.session_state.get("_bootstrapped"):
         try:
-            cloud_sync.pull_database_from_github()
+            pull_result = cloud_sync.pull_database_from_github()
+            if pull_result.get("reason") == "remote_database_smaller_than_seed":
+                st.warning("GitHub 上的数据库少于内置种子词库，已保留种子词库，避免原始单词丢失。")
         except Exception as exc:  # noqa: BLE001
             st.warning(f"读取 GitHub 最新数据库失败，将使用当前数据库：{exc}")
         repo.ensure_bootstrap_data()

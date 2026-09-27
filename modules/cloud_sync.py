@@ -7,7 +7,8 @@ from typing import Any
 
 import requests
 
-from .config import DB_PATH
+from .config import DB_PATH, SEED_DB_PATH
+from .db import database_word_count, restore_seed_database_if_needed
 
 
 DEFAULT_REPO = "leo66-lab/GREat-Leo"
@@ -76,13 +77,27 @@ def pull_database_from_github() -> dict[str, Any]:
     config = sync_config()
     remote = _remote_file(config)
     content = base64.b64decode(remote["content"])
-    if DB_PATH.exists() and DB_PATH.read_bytes() == content:
-        return {"status": "unchanged"}
-
     temp_path = Path(str(DB_PATH) + ".download")
     temp_path.write_bytes(content)
+    remote_word_count = database_word_count(temp_path)
+    seed_word_count = database_word_count(SEED_DB_PATH)
+
+    if seed_word_count > 0 and remote_word_count < seed_word_count:
+        temp_path.unlink(missing_ok=True)
+        restore_seed_database_if_needed()
+        return {
+            "status": "skipped",
+            "reason": "remote_database_smaller_than_seed",
+            "remote_word_count": remote_word_count,
+            "seed_word_count": seed_word_count,
+        }
+
+    if DB_PATH.exists() and DB_PATH.read_bytes() == content:
+        temp_path.unlink(missing_ok=True)
+        return {"status": "unchanged", "word_count": remote_word_count}
+
     temp_path.replace(DB_PATH)
-    return {"status": "pulled", "sha": remote.get("sha", "")}
+    return {"status": "pulled", "sha": remote.get("sha", ""), "word_count": remote_word_count}
 
 
 def push_database_to_github(message: str = "Update GRE vocabulary database") -> dict[str, Any]:
@@ -90,6 +105,18 @@ def push_database_to_github(message: str = "Update GRE vocabulary database") -> 
         return {"status": "skipped", "reason": "not_configured"}
     if not DB_PATH.exists():
         return {"status": "skipped", "reason": "missing_database"}
+
+    local_word_count = database_word_count(DB_PATH)
+    seed_word_count = database_word_count(SEED_DB_PATH)
+    if local_word_count == 0 and restore_seed_database_if_needed():
+        local_word_count = database_word_count(DB_PATH)
+    if seed_word_count > 0 and local_word_count < seed_word_count:
+        return {
+            "status": "skipped",
+            "reason": "local_database_smaller_than_seed",
+            "local_word_count": local_word_count,
+            "seed_word_count": seed_word_count,
+        }
 
     config = sync_config()
     remote = _remote_file(config)

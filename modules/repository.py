@@ -6,7 +6,14 @@ import re
 from typing import Any, Iterable
 
 from .config import DEFAULT_LEVEL_1_CATEGORIES
-from .db import DB_PATH, get_connection, initialize_database, row_to_dict
+from .db import (
+    DB_PATH,
+    ensure_seed_database_available,
+    get_connection,
+    initialize_database,
+    restore_seed_database_if_needed,
+    row_to_dict,
+)
 
 
 SYNONYM_KEY_RULES = [
@@ -206,6 +213,8 @@ def set_setting(key: str, value: Any) -> None:
 
 
 def ensure_bootstrap_data() -> None:
+    ensure_seed_database_available()
+    restore_seed_database_if_needed()
     initialize_database(DB_PATH)
     for name_en, name_cn in DEFAULT_LEVEL_1_CATEGORIES:
         get_or_create_category(level=1, name_cn=name_cn, name_en=name_en)
