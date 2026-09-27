@@ -57,6 +57,16 @@ APP_ADMIN_PASSWORD = "换成你的管理员密码"
 
 配置后，访客可以浏览词库、同义词、同根词和复习计划；新增、上传、编辑、删除、合并索引、生成复习计划和复习打分需要管理员登录。
 
+部署到 Streamlit Cloud 时，如果要让新增词在刷新或云端重启后仍然保留，还需要配置 GitHub 数据库同步：
+
+```toml
+GITHUB_DB_SYNC = "true"
+GITHUB_TOKEN = "换成有仓库 Contents 读写权限的 GitHub token"
+GITHUB_REPO = "leo66-lab/GREat-Leo"
+GITHUB_BRANCH = "main"
+GITHUB_DB_PATH = "gre_vocab.db"
+```
+
 ## 快速导入格式
 
 每行一个词条，字段顺序固定为：

@@ -8,6 +8,12 @@
 - 配置 `APP_ADMIN_PASSWORD` 后，公网访客只能浏览。
 - 新增、上传、编辑、删除、同义/同根合并、生成复习计划、复习打分等写操作需要管理员密码。
 
+当前应用也支持 GitHub 数据库同步：
+
+- 启动时从 GitHub 拉取最新 `gre_vocab.db`。
+- 管理员新增、上传、编辑、删除或生成计划后，会把新的 `gre_vocab.db` 写回 GitHub。
+- 这样 Streamlit Cloud 重启或刷新后，不会回到最初的数据库。
+
 ## 推荐方案
 
 ### 方案 A：GitHub + Streamlit Community Cloud
@@ -25,18 +31,31 @@ app.py
 ```
 
 4. 平台会读取 `requirements.txt` 安装依赖。
-5. 在应用的 Secrets 里添加管理员密码：
+5. 创建一个 GitHub token，用于让网站把更新后的 `gre_vocab.db` 写回仓库。
+
+推荐使用 GitHub Fine-grained personal access token：
+
+- Repository access：只选择 `leo66-lab/GREat-Leo`
+- Repository permissions：`Contents` 选择 `Read and write`
+
+6. 在 Streamlit 应用的 Secrets 里添加：
 
 ```toml
 APP_ADMIN_PASSWORD = "换成你的管理员密码"
+GITHUB_DB_SYNC = "true"
+GITHUB_TOKEN = "换成你的 GitHub token"
+GITHUB_REPO = "leo66-lab/GREat-Leo"
+GITHUB_BRANCH = "main"
+GITHUB_DB_PATH = "gre_vocab.db"
 ```
 
-6. 部署完成后获得公网链接。
+7. 部署完成后获得公网链接。
 
 注意：
 
 - 如果仓库是公开仓库，`gre_vocab.db` 里的词库数据也会随代码公开。需要隐藏数据时，请使用私有仓库。
-- Streamlit Community Cloud 的本地文件系统不适合多人长期写入。适合你自己维护、别人浏览；如果你要长期在公网新增/编辑并可靠保存，建议用 Render / Railway / VPS 的持久磁盘方案。
+- Streamlit Community Cloud 的本地文件系统不适合长期保存用户写入。本项目通过 `GITHUB_TOKEN` 把数据库同步回 GitHub，适合你自己维护、别人浏览。
+- 如果很多人同时编辑，GitHub 文件同步可能发生冲突。多人长期协作建议迁移到 Render / Railway / VPS + 持久磁盘或外部数据库。
 
 ### 方案 B：Render / Railway / VPS
 

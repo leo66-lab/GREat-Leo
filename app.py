@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from modules import cloud_sync
 from modules import export_import
 from modules import repository as repo
 from modules import services
@@ -67,6 +68,17 @@ RATING_LABELS = {
 
 def clear_data_cache() -> None:
     st.cache_data.clear()
+
+
+def sync_database_change(message: str = "Update GRE vocabulary database") -> None:
+    clear_data_cache()
+    try:
+        result = cloud_sync.push_database_to_github(message)
+    except Exception as exc:  # noqa: BLE001
+        st.warning(f"本地已保存，但同步到 GitHub 失败：{exc}")
+        return
+    if result.get("status") == "pushed":
+        st.caption("已同步到 GitHub，刷新或云端重启后仍会保留。")
 
 
 @st.cache_data(ttl=20, show_spinner=False)
@@ -141,6 +153,10 @@ def cached_review_plan_words(plan_id: int, day_number: int) -> list[dict]:
 
 def setup() -> None:
     if not st.session_state.get("_bootstrapped"):
+        try:
+            cloud_sync.pull_database_from_github()
+        except Exception as exc:  # noqa: BLE001
+            st.warning(f"读取 GitHub 最新数据库失败，将使用当前数据库：{exc}")
         repo.ensure_bootstrap_data()
         st.session_state["_bootstrapped"] = True
     st.markdown(
@@ -439,7 +455,7 @@ def page_add_word() -> None:
                     word_root=root,
                 )
                 action = "更新" if result["updated"] else "新增"
-                clear_data_cache()
+                sync_database_change(f"{action}单词：{word}")
                 st.success(f"已{action}：{word}。")
             except Exception as exc:  # noqa: BLE001
                 st.error(f"保存失败：{exc}")
@@ -467,7 +483,7 @@ def page_add_word() -> None:
                 if st.button("导入上传文件"):
                     try:
                         result = export_import.import_file(uploaded, uploaded.name)
-                        clear_data_cache()
+                        sync_database_change(f"导入文件：{uploaded.name}")
                         st.success(
                             f"文件导入完成：新增 {result['created']} 条，更新 {result['updated']} 条，跳过 {result['skipped']} 条。"
                         )
@@ -479,7 +495,7 @@ def page_add_word() -> None:
         if st.button("导入粘贴内容", type="primary"):
             try:
                 result = services.batch_import_simple_words("\n".join([raw_text, uploaded_text]).strip())
-                clear_data_cache()
+                sync_database_change("批量导入单词")
                 st.success(
                     f"处理 {result['seen']} 行，新增 {len(result['created'])} 条，更新 {len(result['updated'])} 条，跳过 {len(result['skipped'])} 条。"
                 )
@@ -595,7 +611,7 @@ def page_word_bank() -> None:
                 status="learning",
                 review_status="learning",
             )
-            clear_data_cache()
+            sync_database_change(f"编辑单词：{word}")
             st.success("已保存修改。")
             st.rerun()
         except Exception as exc:  # noqa: BLE001
@@ -603,7 +619,7 @@ def page_word_bank() -> None:
 
     if st.button("删除这个词条"):
         repo.delete_simple_entry(int(item["sense_id"]))
-        clear_data_cache()
+        sync_database_change(f"删除词条：{item['word']}")
         st.warning("已删除。")
         st.rerun()
 
@@ -637,7 +653,7 @@ def page_synonyms() -> None:
                 if st.button("保存索引名称"):
                     try:
                         updated = repo.rename_synonym_key(selected, new_name)
-                        clear_data_cache()
+                        sync_database_change(f"重命名同义索引：{selected}")
                         st.success(f"已更新 {updated} 个词条。")
                         st.rerun()
                     except Exception as exc:  # noqa: BLE001
@@ -647,7 +663,7 @@ def page_synonyms() -> None:
                 merge_sources = st.multiselect("把这些索引并入当前索引", other_keys)
                 if st.button("合并到当前索引"):
                     updated = repo.merge_synonym_keys(merge_sources, selected)
-                    clear_data_cache()
+                    sync_database_change(f"合并同义索引：{selected}")
                     st.success(f"已合并 {updated} 个词条。")
                     st.rerun()
         else:
@@ -683,7 +699,7 @@ def page_roots() -> None:
                 if st.button("保存词根索引名称"):
                     try:
                         updated = repo.rename_root_key(selected, new_name)
-                        clear_data_cache()
+                        sync_database_change(f"重命名词根索引：{selected}")
                         st.success(f"已更新 {updated} 个词条。")
                         st.rerun()
                     except Exception as exc:  # noqa: BLE001
@@ -693,7 +709,7 @@ def page_roots() -> None:
                 merge_sources = st.multiselect("把这些索引并入当前索引", other_keys)
                 if st.button("合并到当前词根索引"):
                     updated = repo.merge_root_keys(merge_sources, selected)
-                    clear_data_cache()
+                    sync_database_change(f"合并词根索引：{selected}")
                     st.success(f"已合并 {updated} 个词条。")
                     st.rerun()
         else:
@@ -733,7 +749,7 @@ def page_review() -> None:
         if st.button("生成 / 重排背词计划", type="primary", disabled=not can_write):
             try:
                 plan_result = repo.create_review_plan(int(review_days))
-                clear_data_cache()
+                sync_database_change("生成背词计划")
                 repo_set_setting("review_days", plan_result["total_days"])
                 save_review_position(int(plan_result["plan_id"]), 1, 0)
                 st.session_state["review_revealed"] = False
@@ -834,7 +850,7 @@ def page_review() -> None:
                 with col:
                     if st.button(RATING_LABELS[rating], key=f"plan_review_{rating}_{item['sense_id']}", width="stretch"):
                         result = services.apply_review_result(int(item["sense_id"]), REVIEW_MODE_LABELS[mode], rating)
-                        clear_data_cache()
+                        sync_database_change(f"复习打分：{item['word']}")
                         save_review_position(plan_id, current_day, current_index)
                         st.session_state["review_revealed"] = False
                         st.success(f"已更新熟悉度为 {result['familiarity']}；下次复习 {result['next_review_date']}。")
